@@ -1,0 +1,165 @@
+kasmvnc
+as nornmal user clone the following git repo:
+
+cd ~/
+git clone https://github.com/vidalinux/AUR.git
+install perl-hash-merge-simple:
+
+cd ~/AUR/perl-hash-merge-simple/
+makepkg -si
+install kasmvncserver:
+
+cd ~/AUR/kasmvncserver-bin
+makepkg -si
+execute the following command to configure vncserver:
+
+vncserver
+select create a new user with write access:
+
+1
+enter the username of your current user and set password:
+
+linux
+on desktop environment select manually edit xstartup:
+
+2
+edit ~/.vnc/kasmvnc.yaml and add the following:
+
+desktop:
+  resolution:
+    width: 1024
+    height: 768
+  allow_resize: true
+  pixel_depth: 24
+  gpu:
+    hw3d: false
+    drinode: /dev/dri/renderD128
+
+logging:
+  log_writer_name: all
+  log_dest: logfile
+  level: 100 
+
+network:
+  protocol: http
+  interface: 0.0.0.0
+  websocket_port: auto
+  use_ipv4: true
+  use_ipv6: true
+  udp:
+    public_ip: auto
+    port: auto
+    stun_server: auto
+  ssl:
+    pem_certificate: /opt/ssl/certs/server.crt
+    pem_key: /opt/ssl/certs/server.key
+    require_ssl: true
+create rsa key:
+
+sudo mkdir /opt/ssl/certs/ -p
+sudo chmod -R 777 /opt/ssl
+cd /opt/ssl/certs
+openssl genrsa -out server.key 3072
+create certificate csr:
+
+openssl req -new -key server.key -out server.csr
+fill the following blanks:
+
+Country Name (2 letter code) []: US
+State or Province Name (full name) []: Puerto Rico
+Locality Name (eg, city) []: San Juan
+Organization Name (eg, company) []: Vidalinux.com Corp.
+Organizational Unit Name (eg, section) []: Linux Consulting
+Common Name (eg, your name or your server's hostname) []: vnc.example.com
+Email Address []: myemail@gmail.com
+Please enter the following 'extra' attributes
+to be sent with your certificate request
+A challenge password []: just press enter
+An optional company name []: just press enter
+create the certificate:
+
+openssl x509 -req -days 365 -in server.csr -signkey server.key -out server.crt
+create root certificate:
+
+openssl req -x509 -new -nodes -key server.key -sha256 -out ca.pem
+fill the following blanks:
+
+Country Name (2 letter code) []: US
+State or Province Name (full name) []: Puerto Rico
+Locality Name (eg, city) []: San Juan
+Organization Name (eg, company) []: Vidalinux.com Corp.
+Organizational Unit Name (eg, section) []: Linux Consulting
+Common Name (eg, your name or your server's hostname) []: vnc.example.com
+Email Address []: myemail@gmail.com
+Please enter the following 'extra' attributes
+to be sent with your certificate request
+A challenge password []: just press enter
+An optional company name []: just press enter
+edit ~/.vnc/xstartup for xfce:
+
+#!/bin/sh 
+
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+
+if [ -d /etc/X11/xinit/xinitrc.d ] ; then
+ for f in /etc/X11/xinit/xinitrc.d/?*.sh ; do
+  [ -x "$f" ] && . "$f"
+ done
+ unset f
+fi
+
+dbus-launch startxfce4 &
+edit ~/.vnc/xstartup for kde:
+
+#!/bin/sh 
+
+unset SESSION_MANAGER
+unset DBUS_SESSION_BUS_ADDRESS
+
+if [ -d /etc/X11/xinit/xinitrc.d ] ; then
+ for f in /etc/X11/xinit/xinitrc.d/?*.sh ; do
+  [ -x "$f" ] && . "$f"
+ done
+ unset f
+fi
+
+startplasma-x11 &
+set xstartup permissions:
+
+chmod +x ~/.vnc/xstartup
+create systemd directory:
+
+mkdir -p ~/.config/systemd/user
+configure systemd service:
+
+cat > ~/.config/systemd/user/vncserver\@\:2.service << EOF
+[Unit]
+Description=Remote desktop service (VNC)
+After=syslog.target network.target
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/vncserver %i
+ExecStop=/usr/bin/vncserver -kill %i
+
+[Install]
+WantedBy=default.target
+EOF
+enable service:
+
+systemctl --user enable vncserver@:2.service
+start service:
+
+systemctl --user start vncserver@:2.service
+login as root on your computer:
+
+sudo su -
+add the ip address and hostname of your session to /etc/hosts:
+
+cat >> /etc/hosts << EOF
+192.168.77.124 vnc.example.com
+EOF
+connect to your vnc session using your browser:
+
+https://vnc.example.com:8445
