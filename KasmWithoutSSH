@@ -1,0 +1,124 @@
+KONU
+Arch Linux + XFCE + KasmVNC + Cloudflare
+SSH login gerektiren KasmVNC sorununu “localhost SSH keepalive” yöntemiyle çözme
+
+PROBLEM TANIMI
+
+Arch Linux üzerinde XFCE + KasmVNC kurulumunda aşağıdaki problem yaşanır:
+
+KasmVNC, kullanıcı “tm” login olmadan (SSH veya lokal) çalışmaz
+
+Sistem reboot sonrası Cloudflare üzerinden KasmVNC erişimi başarısız olur
+
+SSH ile tm@server login olununca KasmVNC anında çalışmaya başlar
+
+Sebep:
+KasmVNC, kullanıcıya ait PAM/DBus/XDG session ortamını bekler.
+SSH login bu ortamı oluşturur, reboot sonrası ise oluşmaz.
+
+ÇÖZÜM YAKLAŞIMI (WORKAROUND AMA STABİL)
+
+Sistemin kendi kendine tm@localhost üzerinden SSH login açması sağlanır.
+Bu login:
+
+Parolasız (SSH key)
+
+Sürekli açık (autossh)
+
+Reboot sonrası otomatik
+
+SSH düşerse yeniden bağlanır
+
+Bu sayede KasmVNC her zaman “login varmış gibi” çalışır.
+
+ÖN KOŞULLAR
+
+Kullanıcı adı: tm
+
+SSH server çalışıyor olmalı
+
+KasmVNC zaten kurulmuş ve Cloudflare bağlı olmalı
+
+ADIM 1 – SSH KEY OLUŞTURMA (tm kullanıcısı)
+
+tm kullanıcısı olarak:
+
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519
+
+Yetkiler:
+
+chmod 700 ~/.ssh
+chmod 600 ~/.ssh/id_ed25519
+chmod 644 ~/.ssh/id_ed25519.pub
+
+authorized_keys’e ekle:
+
+cat ~/.ssh/id_ed25519.pub >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+
+Test:
+
+ssh -o BatchMode=yes tm@localhost "echo OK"
+
+OK yazıyorsa key login hazır.
+
+ADIM 2 – known_hosts ÖNCEDEN EKLEME
+
+Servis interactive olmadığı için host key önceden yazılır:
+
+ssh-keyscan -H localhost 127.0.0.1 ::1 >> ~/.ssh/known_hosts
+chmod 600 ~/.ssh/known_hosts
+
+ADIM 3 – autossh KURULUMU
+
+sudo pacman -S autossh
+
+ADIM 4 – SSH KEEPALIVE SYSTEMD SERVİSİ
+
+Aşağıdaki servis, tm@localhost için sürekli SSH login açık tutar.
+
+sudo tee /etc/systemd/system/ssh-local-keepalive.service <<'EOF'
+[Unit]
+Description=Keep a local SSH login session for tm (workaround)
+After=sshd.service network-online.target
+Wants=sshd.service network-online.target
+
+[Service]
+User=tm
+Environment=HOME=/home/tm
+WorkingDirectory=/home/tm
+Environment=AUTOSSH_GATETIME=0
+ExecStart=/usr/bin/autossh -M 0 -N -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/tm/.ssh/known_hosts tm@localhost
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+Aktifleştir:
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now ssh-local-keepalive.service
+
+Durum kontrol:
+
+sudo systemctl status ssh-local-keepalive.service
+
+Beklenen durum:
+Active: active (running)
+
+ADIM 5 – SSH SERVER KONTROL
+
+sudo systemctl enable --now sshd
+sudo systemctl status sshd
+
+SONUÇ
+
+tm kullanıcısı için sürekli aktif bir login session oluşur
+
+KasmVNC artık SSH login gerektirmez
+
+Cloudflare üzerinden erişim reboot sonrası da çalışır
+
+SSH bağlantısı düşerse autossh otomatik yeniden bağlanır
